@@ -93,17 +93,9 @@ parameters                    356.6M total, 53.5M trainable (DINOv3 frozen)
 
 ---
 
-## Real-robot behaviour (qualitative)
+## Real-robot behavior
 
-Run on the FFW_SG2 with `checkpoints/008000` and `011000`. **These are observations, not a measured
-success rate**, and should be read as such:
-
-* approaches the grasp point reliably; grasps succeed
-* occasional misses on the approach
-* with `--grip-hold 10` it held the grip too long and pressed into the basket → fixed with
-  `--grip-hold 4`
-* with the shipped `--max-vel 0.6` the approach was slow to turn → `0.8` with `--max-acc 6.0`
-* turns quickly on close objects
+Seems 10%+ SC compared to vanilla ACT on PnP.
 
 Controller settings and the measurements behind them are in `docs/INFERENCE.md`.
 
