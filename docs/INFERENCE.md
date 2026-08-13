@@ -18,7 +18,7 @@ python3 infer.py --policy act_prior \
   --speed 1.0 --max-steps 1200 --live --home-first
 ```
 
-`scripts/infer.sh <ckpt>` wraps it.
+`python3 prior_act.py infer <ckpt> --infer-py PATH` wraps it.
 
 **Drop `--live` for a dry run** : it observes, infers, clamps and prints the plan without publishing. Do this first on any new checkpoint.
 
@@ -141,12 +141,12 @@ position-controlled gripper stalls against the object.
 Dry-run a new checkpoint first (omit `--live`) and check three things:
 
 ```bash
-python3 scripts/diagnostics/latent_health.py <ckpt>/pretrained_model
+python3 prior_act.py check <ckpt>/pretrained_model
 ```
 
 1. **it loads** — if `config.json` still holds the training machine's DINOv3 path loading raises a
    HuggingFace "Repo id must be in the form namespace/repo_name" error. Run
-   `scripts/localize_ckpt.sh`.
+   `prior_act.py localize`.
 2. **it is deterministic** — two identical calls must return an identical chunk. If not,
    `state_dropout` is leaking into inference and the policy is dropping its own joint angles at inference.
 3. **the prior is live** — changing the scene image must change the action. Measured here:

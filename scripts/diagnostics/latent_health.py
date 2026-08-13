@@ -1,102 +1,182 @@
-"""Verdict on whether the latent branch is doing anything, for any act_prior checkpoint.
+#!/usr/bin/env python3
+"""Whether the latent branch is doing anything, for any act_prior checkpoint.
 
-Reads the three numbers `latent_diag_every` logs during training, but post-hoc, so an existing
-checkpoint can be judged without retraining. Run it on the old checkpoint and the new one and
-the comparison is the whole argument.
+Author: Dawit Chun
 
-  latent_authority  |a(z=mu_q) - a(z=0)|      decoder ignores z if ~0
-  prior_post_gap    |a(z=mu_q) - a(z=mu_p)|   the train/test mismatch, in action units
-  mu_q_std          spread of the posterior mean across probes; ~0 = collapsed
-  kld               against the learned prior, and against N(0,I) for scale
+Computes post-hoc the numbers `latent_diag_every` logs during training, so an existing checkpoint can
+be judged without retraining.
+
+    latent_authority   |a(z=mu_q) - a(z=0)|      the decoder ignores z if this is ~0
+    prior_post_gap     |a(z=mu_q) - a(z=mu_p)|   the train/test mismatch, in action units
+    mu_prior_std       spread of the prior mean across scenes; ~0 is a learned constant
+    mu_q_std           spread of the posterior mean; ~0 is posterior collapse
+    kld_loss           against the learned prior
+
+Reference values from a working model: authority 0.1489, gap 0.0032 (2% of authority),
+mu_prior_std 0.0961. Two failure signatures seen in practice: authority ~1e-4 (latent dead), and
+authority high with the gap nearly equal to it (train/test shortcut, worse than dead).
+
+Camera keys, image shapes and the state dimension are read from the checkpoint's config.json. The
+dataset is only needed for real observations; with --synthetic the probes run on noise, which is
+enough to detect a dead latent though not to judge scene dependence.
+
+Usage:
+    python3 latent_health.py <ckpt>/pretrained_model --dataset /path/to/lerobot_dataset
+    python3 latent_health.py <ckpt>/pretrained_model --synthetic
 """
-import sys, glob, json
-sys.path.insert(0,"/tmp/igen_sim/deploy_pkg")
-import numpy as np, cv2, pandas as pd, torch
-DS="/home/robotis/robot_aiworker/datasets/aiw_pp_2bttles_lerobot"
-CAMS=["observation.images.scene","observation.images.wrist_left","observation.images.wrist_right"]
-KEYS=("scene","wrist_left","wrist_right")
-CKPT=sys.argv[1] if len(sys.argv)>1 else "/home/robotis/robot_aiworker/act_prior_aiw/033000"
-info=json.load(open(f"{DS}/meta/info.json")); FPS=info["fps"]
-em=pd.read_parquet(glob.glob(f"{DS}/meta/episodes/**/*.parquet",recursive=True)[0])
-df=pd.read_parquet(glob.glob(f"{DS}/data/**/*.parquet",recursive=True)[0])
-ST=np.stack(df["observation.state"].to_numpy()).astype(np.float32)
-AC=np.stack(df["action"].to_numpy()).astype(np.float32)
-def grab(ep,lf):
-    r=em.iloc[ep]; out=[]
-    for k in KEYS:
-        ci=int(r[f"videos/observation.images.{k}/chunk_index"]);fi=int(r[f"videos/observation.images.{k}/file_index"])
-        t0=float(r[f"videos/observation.images.{k}/from_timestamp"])
-        cap=cv2.VideoCapture(f"{DS}/videos/observation.images.{k}/chunk-{ci:03d}/file-{fi:03d}.mp4")
-        cap.set(cv2.CAP_PROP_POS_FRAMES,int(round(t0*FPS))+lf);ok,im=cap.read();cap.release()
-        if not ok: return None
-        out.append(cv2.cvtColor(im,cv2.COLOR_BGR2RGB))
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+
+
+def load_real_batch(ds_root, cams, n, rng):
+    """n observations from the dataset, one per episode where possible."""
+    import cv2
+    import pandas as pd
+
+    info = json.loads((Path(ds_root) / "meta" / "info.json").read_text())
+    fps = info["fps"]
+    ep_files = glob.glob(f"{ds_root}/meta/episodes/**/*.parquet", recursive=True)
+    em = pd.read_parquet(ep_files[0])
+    df = pd.read_parquet(glob.glob(f"{ds_root}/data/**/*.parquet", recursive=True)[0])
+    states = np.stack(df["observation.state"].to_numpy()).astype(np.float32)
+    actions = np.stack(df["action"].to_numpy()).astype(np.float32)
+
+    keys = [c.split("observation.images.")[-1] for c in cams]
+    out = []
+    for i in range(min(n, len(em))):
+        r = em.iloc[i]
+        frames = []
+        ok = True
+        for k in keys:
+            ci = int(r[f"videos/observation.images.{k}/chunk_index"])
+            fi = int(r[f"videos/observation.images.{k}/file_index"])
+            t0 = float(r[f"videos/observation.images.{k}/from_timestamp"])
+            path = f"{ds_root}/videos/observation.images.{k}/chunk-{ci:03d}/file-{fi:03d}.mp4"
+            cap = cv2.VideoCapture(path)
+            # mid-episode: the arm is engaged with the scene rather than at the home pose
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(round(t0 * fps)) + 200)
+            got, im = cap.read()
+            cap.release()
+            if not got:
+                ok = False
+                break
+            frames.append(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
+        if not ok:
+            continue
+        j = int(r["dataset_from_index"]) + 200
+        if j + 100 >= len(states):
+            continue
+        out.append((frames, states[j], actions[j:j + 100]))
     return out
-from act_prior_policy import ActPriorPolicy
-pol=ActPriorPolicy(CKPT,camera_keys=CAMS,device="cuda")
-P=pol.policy; m=P.model; H=P.config.chunk_size
-P.config.latent_diag_every=1
-P.train()                                   #the diagnostics gate on the POLICY's training flag, not the model's
-for mod in m.modules():
-    if isinstance(mod,torch.nn.Dropout): mod.p=0.0
-print(f"injection={getattr(P.config,'latent_injection','token')}  "
-      f"kl_weight={P.config.kl_weight}  kl_free_bits={getattr(P.config,'kl_free_bits',0.0)}\n")
 
-#BATCH THE PROBES. In train mode ResNet18's BatchNorm uses BATCH statistics, so a batch of 1
-#normalises every channel to zero mean per sample and destroys the image features -- which made an
-#earlier version of this script report the latent as 500x more influential than it is. Training
-#runs at batch 192; measure under the same conditions or do not measure at all.
-BATCH = 8
-items=[]
-for e in (0,7,23,41,66,88):
-    r=em.iloc[e]; i0=int(r["dataset_from_index"]); T=int(r["dataset_to_index"])-i0
-    for ph in (0.15,0.40,0.65,0.85):
-        f=int(ph*T)
-        if f+H<T: items.append((e,i0,f))
-acc={}
-n=0
-for s0 in range(0, len(items)-BATCH+1, BATCH):
-    grp=items[s0:s0+BATCH]
-    obs_list=[]
-    ok=True
-    for e,i0,f in grp:
-        imgs=grab(e,f)
-        if imgs is None: ok=False; break
-        o={"observation.state":torch.as_tensor(ST[i0+f]).reshape(-1)}
-        for k,im in zip(CAMS,imgs):
-            o[k]=torch.from_numpy(np.ascontiguousarray(im)).permute(2,0,1).float()/255.
-        o["task"]=""; o["action"]=torch.as_tensor(AC[i0+f:i0+f+H])
-        obs_list.append(pol.pre(o))
-    if not ok: continue
-    #Per-key expected rank WITHOUT the batch dim: images (C,H,W)=3, state (D,)=1, action (T,D)=2.
-    #Getting this wrong is silent -- an action chunk that is already 2-D concatenates along TIME
-    #and produces a (800,16) tensor the VAE encoder happily reshapes into nonsense.
-    RANK={**{k:3 for k in CAMS}, "observation.state":1, "action":2}
-    b={}
-    for k,r in RANK.items():
-        vs=[(o[k] if o[k].ndim==r+1 else o[k].unsqueeze(0)) for o in obs_list]
-        b[k]=torch.cat(vs,0)
-        assert b[k].shape[0]==len(grp), f"{k} batched to {b[k].shape}"
-    b["task"]=[""]*len(grp)
-    b["observation.images"]=[b[k] for k in CAMS]
-    b["action_is_pad"]=torch.zeros(b["action"].shape[:2],dtype=torch.bool,device=pol.dev)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("ckpt", help="path to a checkpoint's pretrained_model directory")
+    ap.add_argument("--dataset", default=None, help="LeRobot dataset root, for real observations")
+    ap.add_argument("--synthetic", action="store_true", help="use noise instead of a dataset")
+    ap.add_argument("--n", type=int, default=24, help="number of probe observations")
+    ap.add_argument("--policy-dir", default=None,
+                    help="directory containing act_prior_policy.py, if not importable")
+    a = ap.parse_args()
+    if not a.dataset and not a.synthetic:
+        ap.error("give --dataset <root> or --synthetic")
+    if a.policy_dir:
+        sys.path.insert(0, a.policy_dir)
+
+    ck = Path(a.ckpt)
+    cfg = json.loads((ck / "config.json").read_text())
+    feats = cfg.get("input_features", {})
+    cams = [k for k in feats if k.startswith("observation.images")]
+    shapes = {k: tuple(feats[k]["shape"]) for k in cams}
+    state_dim = feats.get("observation.state", {}).get("shape", [16])[0]
+
+    from lerobot.policies.factory import get_policy_class
+    pol = get_policy_class(cfg["type"]).from_pretrained(str(ck)).cuda()
+    m = pol.model
+    print(f"{ck.parent.name}  {sum(p.numel() for p in pol.parameters())/1e6:.1f}M params  "
+          f"cameras {len(cams)}")
+    print(f"injection={cfg.get('latent_injection')}  features={cfg.get('scene_prior_features')}  "
+          f"prior_fit_weight={cfg.get('prior_fit_weight')}  kl_free_bits={cfg.get('kl_free_bits')}")
+
+    rng = np.random.default_rng(0)
+    if a.synthetic:
+        batch = []
+        for _ in range(a.n):
+            frames = [rng.integers(0, 255, (h, w, c), dtype=np.uint8)
+                      for (c, h, w) in (shapes[k] for k in cams)]
+            batch.append((frames, np.zeros(state_dim, np.float32),
+                          np.zeros((100, state_dim), np.float32)))
+    else:
+        batch = load_real_batch(a.dataset, cams, a.n, rng)
+        if not batch:
+            raise SystemExit("no usable observations read from the dataset")
+    print(f"\n{len(batch)} probes ({'synthetic' if a.synthetic else 'real frames'})\n")
+
+    from lerobot.policies.factory import make_pre_post_processors
+    from lerobot.configs.policies import PreTrainedConfig
+    pre, _ = make_pre_post_processors(PreTrainedConfig.from_pretrained(str(ck)),
+                                      pretrained_path=str(ck))
+
+    # Probes run in EVAL mode. nn.MultiheadAttention keeps dropout as a float attribute rather than
+    # an nn.Dropout submodule, so it stays active in training mode no matter what is done to the
+    # module tree; two training-mode forwards then differ by more than the effect being measured.
+    pol.eval()
+    acc = {}
     with torch.no_grad():
-        _,ld=P.forward(b)
-    for k,v in ld.items(): acc.setdefault(k,[]).append(v)
-    n+=len(grp)
+        for frames, state, action in batch:
+            obs = {"observation.state": torch.as_tensor(state).reshape(-1), "task": "probe"}
+            for k, im in zip(cams, frames):
+                t = torch.from_numpy(np.asarray(im)).permute(2, 0, 1).float()
+                obs[k] = t / 255.0 if float(t.max()) > 1.5 else t
+            obs["action"] = torch.as_tensor(action)
+            obs["action_is_pad"] = torch.zeros(len(action), dtype=torch.bool)
+            b = pre(obs)
+            b = {k: (v.cuda().unsqueeze(0) if torch.is_tensor(v) and v.dim() > 0 else v)
+                 for k, v in b.items()}
+            b["observation.images"] = [b[k] for k in cams]
 
-print(f"{n} probes\n")
-for k in ("l1_loss","kld_loss","latent_authority","prior_post_gap","sample_jitter","mu_q_std","mu_prior_std","mu_q_norm"):
-    if k in acc: print(f"  {k:<18} {np.mean(acc[k]):.6f}")
+            mu_q, mu_p = m.encode_latents(b) if hasattr(m, "encode_latents") else (None, None)
+            if mu_q is None:
+                raise SystemExit(
+                    "this checkpoint's model does not expose encode_latents(); use the training-time "
+                    "diagnostics via --policy.latent_diag_every instead")
+            a_mu = m(b, latent_override=mu_q)[0]
+            a_zero = m(b, latent_override=torch.zeros_like(mu_q))[0]
+            acc.setdefault("latent_authority", []).append((a_mu - a_zero).abs().mean().item())
+            if mu_p is not None:
+                a_pri = m(b, latent_override=mu_p)[0]
+                acc.setdefault("prior_post_gap", []).append((a_mu - a_pri).abs().mean().item())
+                acc.setdefault("_mu_p", []).append(mu_p.squeeze(0).cpu().numpy())
+            acc.setdefault("_mu_q", []).append(mu_q.squeeze(0).cpu().numpy())
 
-a=np.mean(acc.get("latent_authority",[0])); g=np.mean(acc.get("prior_post_gap",[0]))
-s=np.mean(acc.get("mu_q_std",[0])); kl=np.mean(acc.get("kld_loss",[0]))
-print("\nVERDICT")
-if a < 1e-3:
-    print(f"  latent is DEAD: authority {a:.2e} in normalized action units.")
-    print(f"  The prior branch is decoration; kld {kl:.2e} is the prior catching a collapsed")
-    print(f"  posterior (mu_q std {s:.2e}), not a converged objective.")
-elif g > 0.5*a:
-    print(f"  latent has authority {a:.4f} but the prior only predicts the posterior to {g:.4f}")
-    print(f"  ({100*g/a:.0f}% of the authority is train/test mismatch) -- ACTIVELY HARMFUL.")
-else:
-    print(f"  latent WORKS: authority {a:.4f}, prior/posterior gap {g:.4f} ({100*g/a:.0f}% of it).")
+    auth = float(np.mean(acc["latent_authority"]))
+    gap = float(np.mean(acc.get("prior_post_gap", [float("nan")])))
+    mu_q_std = float(np.stack(acc["_mu_q"]).std(0).mean())
+    mu_p_std = float(np.stack(acc["_mu_p"]).std(0).mean()) if "_mu_p" in acc else float("nan")
+
+    print(f"  latent_authority   {auth:.6f}")
+    print(f"  prior_post_gap     {gap:.6f}")
+    print(f"  mu_q_std           {mu_q_std:.6f}")
+    print(f"  mu_prior_std       {mu_p_std:.6f}")
+    print("\nVERDICT")
+    if auth < 1e-3:
+        print("  the decoder ignores z. The scene backbone contributes nothing to the action.")
+    elif gap > 0.5 * auth:
+        print(f"  authority {auth:.4f} but the prior only reproduces it to {gap:.4f} "
+              f"({100*gap/auth:.0f}% is train/test mismatch) -- ACTIVELY HARMFUL.")
+    else:
+        print(f"  latent works: authority {auth:.4f}, prior/posterior gap {gap:.4f} "
+              f"({100*gap/max(auth,1e-9):.0f}% of it).")
+
+
+if __name__ == "__main__":
+    main()

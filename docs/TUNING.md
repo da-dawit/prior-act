@@ -10,7 +10,7 @@ Do not tune blind. Every decision below is made from three numbers, logged durin
 `--policy.latent_diag_every=250` and computable post-hoc on any checkpoint:
 
 ```bash
-python3 scripts/diagnostics/latent_health.py <ckpt>/pretrained_model
+python3 prior_act.py check <ckpt>/pretrained_model
 ```
 
 | number | meaning |
@@ -118,7 +118,7 @@ Training diagnostics are computed in training mode, where `z` comes from the pos
 `z` comes from the prior. Confirm the prior actually drives the deployed action:
 
 ```bash
-python3 scripts/diagnostics/test_scene_dependence.py <ckpt>/pretrained_model
+python3 prior_act.py check <ckpt>/pretrained_model
 ```
 
 Feeds two different scene images with an identical state and reports the change in the commanded

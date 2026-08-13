@@ -15,7 +15,7 @@ alone would have picked that model.
 ## latent_health.py
 
 ```bash
-python3 scripts/diagnostics/latent_health.py <ckpt>/pretrained_model
+python3 prior_act.py check <ckpt>/pretrained_model
 ```
 
 Reports, over a batch of real observations:
@@ -57,7 +57,7 @@ The probes therefore run in eval mode and anchor on `a(z = mu_q)` rather than on
 ## test_scene_dependence.py
 
 ```bash
-python3 scripts/diagnostics/test_scene_dependence.py <ckpt>/pretrained_model
+python3 prior_act.py check <ckpt>/pretrained_model
 ```
 
 Training diagnostics are computed where `z` comes from the posterior. At inference it comes from the

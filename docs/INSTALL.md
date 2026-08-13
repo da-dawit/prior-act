@@ -80,7 +80,7 @@ OSError: Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/wor
 Rewrite it:
 
 ```bash
-LOCAL_DINO=/path/to/dinov3 scripts/localize_ckpt.sh <ckpt>/pretrained_model/config.json
+LOCAL_DINO=/path/to/dinov3 python3 prior_act.py localize --dino DIR <ckpt>
 ```
 
 The original value is kept in a `.orig_backbone_path` sidecar, so the edit is reversible.

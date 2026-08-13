@@ -35,13 +35,13 @@ Full curve, latent diagnostics and caveats: [docs/RESULTS.md](docs/RESULTS.md).
 cp lerobot_policy/*.py <lerobot>/src/lerobot/policies/act_prior/
 
 # train
-bash scripts/train_prior.sh
+python3 prior_act.py train --dataset DIR --repo-id ID --dino DIR
 
 # verify the latent is alive before trusting a checkpoint
-python3 scripts/diagnostics/latent_health.py out/prior_fit_grid/checkpoints/008000/pretrained_model
+python3 prior_act.py check out/prior_fit_grid/checkpoints/008000/pretrained_model
 
 # run on the robot
-bash scripts/infer.sh out/prior_fit_grid/checkpoints/008000/pretrained_model
+python3 prior_act.py infer out/prior_fit_grid/checkpoints/008000/pretrained_model --infer-py PATH --live
 ```
 
 
@@ -61,26 +61,24 @@ action sequence, and the KL terms that tie the two distributions together.
 
 ![Training loop](assets/training_loop.png)
 
-The KL term is what couples the posterior to the scene prior. Each step it pushes `μ_q, σ_q` toward
-a distribution the image alone can predict, so the latent comes to carry information the prior can
-reproduce at inference.
+Two loops, opposite directions.
 
-This repository adds a **second** KL term, `KL(sg(q) ‖ p)`, which trains the prior in the opposite
-direction and carries no free-bits floor. Without it the prior receives no gradient whenever every
-latent dimension sits below the floor. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**Top:** `KL(q ‖ p)` pushes the posterior toward a distribution the image can predict. This is the
+standard term and it carries the free-bits floor.
+
+**Bottom:** `KL(sg(q) ‖ p)` pushes the prior toward the posterior, and carries **no floor**. The
+posterior is stop-gradded in this term, so the prior cannot collapse it to make its own job easier.
+Without this loop the prior receives no gradient whenever every latent dimension sits below the
+floor, which is the common case. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Inference
 
 ![Inference architecture](assets/architecture_inference.png)
 
-The CVAE encoder is gone at inference, so vanilla ACT sets `z = 0`. Prior-ACT draws `z` from the
-image-conditioned prior instead, which is the whole point: the policy conditions on the scene before
-committing to a trajectory.
-
-> The figures show the design with a **DINOv2 ViT-S** backbone and a 384-d CLS token. The
-> configuration reported below uses **DINOv3 ViT-L/16** with `scene_prior_features=cls_grid`, which
-> feeds the MLP the CLS token *plus* the patch grid pooled to 2×3 cells rather than CLS alone. The
-> structure is otherwise as drawn.
+The CVAE encoder is gone at inference, so vanilla ACT sets `z = 0`. Prior-ACT takes `z = μ_p` from
+the image-conditioned prior instead, so the policy conditions on the scene before committing to a
+trajectory. `deterministic_latent=true` takes the mean rather than sampling: once `decoder_seed`
+gives `z` authority over the action, a fresh draw each control step would inject noise into the arm.
 
 ## Model
 

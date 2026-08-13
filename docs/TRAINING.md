@@ -26,7 +26,7 @@ python -m lerobot.scripts.lerobot_train \
   --output_dir=out/prior_fit_grid --job_name=prior_fit_grid
 ```
 
-`scripts/train_prior.sh` wraps this.
+`python3 prior_act.py train` wraps this.
 
 ---
 
@@ -92,7 +92,7 @@ fails with a confusing HuggingFace error:
 OSError: Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/workspace/pretrained/...'
 ```
 
-Fix with `scripts/localize_ckpt.sh <ckpt>/pretrained_model/config.json`.
+Fix with `python3 prior_act.py localize --dino DIR <ckpt>`.
 
 **Hold out by episode, never by frame.** Frames within an episode are 30 Hz samples of one
 trajectory; a random frame split puts near-duplicates on both sides and reports a score memorisation
