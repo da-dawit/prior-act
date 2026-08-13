@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+out/
+checkpoints/
+wandb/
+*.safetensors
+*.mp4
+*.npz
+.orig_backbone_path
