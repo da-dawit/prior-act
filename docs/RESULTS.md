@@ -100,7 +100,7 @@ Both policies ran the same 50 pick-and-place trials on the real robot. The trial
 
 | policy | successes | rate |
 |---|---|---|
-| vanilla ACT | 25 / 50 | 50% |
+| vanilla ACT | 20 / 50 | 40% |
 | Prior-ACT | 30 / 50 | 60% |
 | Prior-ACT + TD3+BC residual (trained in Isaac Sim) | 41 / 50 | 82% |
 
