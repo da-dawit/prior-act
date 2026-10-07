@@ -107,8 +107,8 @@ Two earlier configurations failed one of these while the loss curve looked healt
 
 ## Scope
 
-Offline results are held-out action L1 on 10 unseen episodes. Real-robot success was measured on 50
-pick-and-place trials with varied objects and bins, the same trials for both policies; counts and
+Offline results are held-out action L1 on 10 unseen episodes. Real-robot success was measured over the
+same 50 episodes of the two-bottle task for both policies; counts and
 caveats are in [docs/RESULTS.md](docs/RESULTS.md).
 
 Prior-ACT does not address generalisation to object positions outside the demonstration

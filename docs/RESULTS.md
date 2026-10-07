@@ -95,8 +95,10 @@ parameters                    356.6M total, 53.5M trainable (DINOv3 frozen)
 
 ## Real-robot success
 
-Both policies ran the same 50 pick-and-place trials on the real robot. The trials varied the objects
-(big and small) and the bins (separate bins or one bin).
+Both policies ran the same 50 episodes of the bimanual two-bottle pick-and-place task on the real
+robot, the task TurboVLA was also tested on. With the TD3+BC residual, Prior-ACT also succeeded in
+some setups outside its training: the bottles and the basket at the edges of the trained area, or
+the box raised or lowered.
 
 | policy | successes | rate |
 |---|---|---|
