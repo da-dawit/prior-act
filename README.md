@@ -6,7 +6,8 @@ ACT with a frozen DINOv3 scene prior, for the ROBOTIS AI Worker (FFW_SG2) bimanu
 
 The prior gives the policy a latent conditioned on the camera image, available at inference. On this
 dataset it reaches 13–16% lower held-out action error than vanilla ACT at matched training steps, and
-reaches ACT's best value in 2.7× fewer steps.
+reaches ACT's best value in 2.7× fewer steps. On the real robot, over the same 50 pick-and-place
+trials, it succeeded in 30 (60%) against 25 (50%) for vanilla ACT.
 
 | | best held-out L1 | at step | vs ACT |
 |---|---|---|---|
@@ -106,9 +107,9 @@ Two earlier configurations failed one of these while the loss curve looked healt
 
 ## Scope
 
-Quantitative results are held-out action L1 on 10 unseen episodes. Task success rate was not measured
-under controlled conditions. Real-robot behaviour is reported qualitatively in
-[docs/RESULTS.md](docs/RESULTS.md).
+Offline results are held-out action L1 on 10 unseen episodes. Real-robot success was measured on 50
+pick-and-place trials with varied objects and bins, the same trials for both policies; counts and
+caveats are in [docs/RESULTS.md](docs/RESULTS.md).
 
 Prior-ACT does not address generalisation to object positions outside the demonstration
 distribution; held-out error is 3.9× training-episode error and that gap is data coverage.

@@ -93,9 +93,16 @@ parameters                    356.6M total, 53.5M trainable (DINOv3 frozen)
 
 ---
 
-## Real-robot behavior
+## Real-robot success
 
-Seems 10%+ SC compared to vanilla ACT on PnP.
+Both policies ran the same 50 pick-and-place trials on the real robot. The trials varied the objects
+(big and small) and the bins (separate bins or one bin).
+
+| policy | successes | rate |
+|---|---|---|
+| vanilla ACT | 25 / 50 | 50% |
+| Prior-ACT | 30 / 50 | 60% |
+| Prior-ACT + TD3+BC residual (trained in Isaac Sim) | 41 / 50 | 82% |
 
 Controller settings and the measurements behind them are in `docs/INFERENCE.md`.
 
@@ -111,14 +118,18 @@ been shown to exceed seed noise. This is the first thing a reviewer will ask.
 The theory in `docs/ARCHITECTURE.md` says `prior_fit_weight` is load-bearing (without it the prior
 provably receives zero gradient), but that is an argument, not a measurement.
 
-**3. Held-out L1 is not task success.** Every quantitative number here is action-matching on unseen
-episodes. A previous run demonstrated the two can disagree: run 2 had a *better* eval curve than
+**3. Held-out L1 is not task success.** Every number above the real-robot section is action-matching
+on unseen episodes. A previous run demonstrated the two can disagree: run 2 had a *better* eval curve than
 vanilla ACT (0.2262 @2000) while its latent was measurably harmful. **Eval loss alone would have
 selected the broken model.** It is the pairing of a better curve *with* a healthy `prior_post_gap`
 that makes this result trustworthy.
 
 **4. `state_dropout=0.5` costs eval loss by design.** Both arms carry it, so the comparison is fair,
 but neither number is comparable to a run without it.
+
+**5. Fifty real-robot trials.** At this count the 95% interval on a rate near 50–60% is about ±14
+points, so the 10-point gap between Prior-ACT and vanilla ACT is small evidence on its own; the
+22-point gain from the TD3+BC residual (z ≈ 2.4) is not.
 
 **5. Generalisation is not addressed.** The base policy's held-out error is 3.9× its
 training-episode error (0.0362 vs 0.0094 rad). That gap is data coverage. Nothing here closes it.
