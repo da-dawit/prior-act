@@ -127,10 +127,6 @@ that makes this result trustworthy.
 **4. `state_dropout=0.5` costs eval loss by design.** Both arms carry it, so the comparison is fair,
 but neither number is comparable to a run without it.
 
-**5. Fifty real-robot trials.** At this count the 95% interval on a rate near 50–60% is about ±14
-points, so the 10-point gap between Prior-ACT and vanilla ACT is small evidence on its own; the
-22-point gain from the TD3+BC residual (z ≈ 2.4) is not.
-
 **5. Generalisation is not addressed.** The base policy's held-out error is 3.9× its
 training-episode error (0.0362 vs 0.0094 rad). That gap is data coverage. Nothing here closes it.
 
